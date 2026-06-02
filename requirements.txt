@@ -1,0 +1,5 @@
+# Face Attendance System — Requirements
+opencv-python>=4.8
+opencv-contrib-python>=4.8
+Pillow>=10.0
+numpy>=1.24
