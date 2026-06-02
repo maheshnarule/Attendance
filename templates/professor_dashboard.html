@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Professor Dashboard - Attendance System</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: #f1f5f9;
+        }
+
+        .header {
+            background: #1e293b;
+            padding: 20px;
+            text-align: center;
+            border-bottom: 3px solid #38bdf8;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .qr-section {
+            text-align: center;
+            grid-column: span 2;
+        }
+
+        .qr-display {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            display: inline-block;
+            margin: 20px 0;
+        }
+
+        .qr-display img {
+            width: 250px;
+            height: 250px;
+        }
+
+        button {
+            background: #38bdf8;
+            color: #0f172a;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .timer {
+            font-size: 24px;
+            font-weight: bold;
+            color: #fbbf24;
+            margin: 10px 0;
+        }
+
+        .attendance-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .attendance-table th,
+        .attendance-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+
+        .attendance-table th {
+            background: #0f172a;
+            color: #38bdf8;
+        }
+
+        .present {
+            color: #4ade80;
+        }
+
+        .absent {
+            color: #f87171;
+        }
+
+        .warning {
+            color: #fb923c;
+        }
+
+        .live-feed {
+            background: #000;
+            border-radius: 8px;
+            width: 100%;
+            max-height: 400px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #38bdf8;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .qr-section {
+                grid-column: span 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>📚 Professor Dashboard</h1>
+        <p>Dr. Smith | Data Structures | Room 101</p>
+    </div>
+
+    <div class="container">
+        <!-- QR Code Generator -->
+        <div class="card qr-section">
+            <h2>📱 Generate Attendance QR Code</h2>
+            <div>
+                <select id="lectureSelect">
+                    <option value="1">Data Structures - 9:00 AM</option>
+                    <option value="2">Algorithms - 10:00 AM</option>
+                    <option value="3">Database Systems - 11:00 AM</option>
+                </select>
+                <button onclick="generateQR()">🔄 Generate New QR Code</button>
+            </div>
+            <div id="qrDisplay" style="display:none;">
+                <div class="qr-display">
+                    <img id="qrImage" src="" alt="QR Code">
+                </div>
+                <div class="timer" id="timer">Valid for 2:00</div>
+                <p>⏰ Students must scan within 2 minutes!</p>
+                <p>📍 Location verification: ON | 📸 Face verification: ON</p>
+            </div>
+        </div>
+
+        <!-- Live Statistics -->
+        <div class="card">
+            <h2>📊 Live Statistics</h2>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalStudents">0</div>
+                    <div>Total Enrolled</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="presentCount">0</div>
+                    <div>Present</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="absentCount">0</div>
+                    <div>Absent</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="attendancePercent">0%</div>
+                <div>Attendance Percentage</div>
+            </div>
+        </div>
+
+        <!-- Live Attendance Feed -->
+        <div class="card">
+            <h2>🔄 Live Attendance Feed</h2>
+            <div id="liveFeed" style="height: 300px; overflow-y: auto;">
+                <p style="color: #94a3b8;">Waiting for students to mark attendance...</p>
+            </div>
+        </div>
+
+        <!-- Attendance List -->
+        <div class="card">
+            <h2>📋 Present Students</h2>
+            <table class="attendance-table" id="presentTable">
+                <thead>
+                    <tr>
+                        <th>Roll No</th>
+                        <th>Name</th>
+                        <th>Time</th>
+                        <th>Verification</th>
+                    </tr>
+                </thead>
+                <tbody id="presentBody">
+                    <tr>
+                        <td colspan="4">No students yet</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Bunkers List -->
+        <div class="card">
+            <h2>⚠️ Bunkers / Not Marked</h2>
+            <table class="attendance-table" id="bunkerTable">
+                <thead>
+                    <tr>
+                        <th>Roll No</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="bunkerBody">
+                    <tr>
+                        <td colspan="3">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentQRToken = null;
+        let timerInterval = null;
+        let currentLectureId = 1;
+
+        // Socket.IO event listeners
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            socket.emit('professor_join', { lecture_id: currentLectureId });
+        });
+
+        socket.on('attendance_update', (data) => {
+            console.log('New attendance:', data);
+            addToLiveFeed(data);
+            refreshAttendanceList();
+        });
+
+        function generateQR() {
+            const lectureId = document.getElementById('lectureSelect').value;
+            currentLectureId = lectureId;
+
+            fetch('/api/generate-qr', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lecture_id: parseInt(lectureId),
+                    professor_id: 1  // In production, get from login
+                })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        currentQRToken = data.qr_token;
+                        document.getElementById('qrImage').src = data.qr_image;
+                        document.getElementById('qrDisplay').style.display = 'block';
+                        startTimer(120);
+                    } else {
+                        alert('Failed to generate QR');
+                    }
+                });
+        }
+
+        function startTimer(seconds) {
+            if (timerInterval) clearInterval(timerInterval);
+
+            let remaining = seconds;
+            const timerElement = document.getElementById('timer');
+
+            timerInterval = setInterval(() => {
+                remaining--;
+                const mins = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                timerElement.textContent = `Valid for ${mins}:${secs.toString().padStart(2, '0')}`;
+
+                if (remaining <= 0) {
+                    clearInterval(timerInterval);
+                    timerElement.textContent = 'EXPIRED! Generate new QR';
+                    timerElement.style.color = '#f87171';
+                }
+            }, 1000);
+        }
+
+        function addToLiveFeed(data) {
+            const feed = document.getElementById('liveFeed');
+            const entry = document.createElement('div');
+            entry.style.padding = '8px';
+            entry.style.borderBottom = '1px solid #334155';
+            entry.style.fontSize = '14px';
+            entry.innerHTML = `
+                <span style="color: #4ade80;">✓</span> 
+                <strong>${data.student_name}</strong> (${data.roll_no}) 
+                - ${data.status} at ${new Date().toLocaleTimeString()}
+            `;
+            feed.insertBefore(entry, feed.firstChild);
+
+            if (feed.children.length > 20) {
+                feed.removeChild(feed.lastChild);
+            }
+        }
+
+        function refreshAttendanceList() {
+            fetch(`/api/lecture/attendance/${currentLectureId}`)
+                .then(res => res.json())
+                .then(data => {
+                    // Update stats
+                    document.getElementById('totalStudents').textContent =
+                        data.attendance.length + data.bunkers.length;
+                    document.getElementById('presentCount').textContent = data.total_present;
+                    document.getElementById('absentCount').textContent = data.total_bunkers;
+
+                    const percent = data.attendance.length > 0 ?
+                        (data.total_present / (data.total_present + data.total_bunkers)) * 100 : 0;
+                    document.getElementById('attendancePercent').textContent =
+                        `${percent.toFixed(1)}%`;
+
+                    // Update present table
+                    const presentBody = document.getElementById('presentBody');
+                    if (data.attendance.length === 0) {
+                        presentBody.innerHTML = '<tr><td colspan="4">No students yet</td></tr>';
+                    } else {
+                        presentBody.innerHTML = data.attendance.map(a => `
+                            <tr>
+                                <td>${a.roll_no}</td>
+                                <td>${a.name}</td>
+                                <td>${a.mark_time?.slice(11, 16) || '-'}</td>
+                                <td>
+                                    ${a.face_verified ? '✓ Face' : '✗ Face'} | 
+                                    ${a.location_verified ? '✓ Location' : '✗ Location'}
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+
+                    // Update bunkers table
+                    const bunkerBody = document.getElementById('bunkerBody');
+                    if (data.bunkers.length === 0) {
+                        bunkerBody.innerHTML = '<tr><td colspan="3">No bunkers! Great job!</td></tr>';
+                    } else {
+                        bunkerBody.innerHTML = data.bunkers.map(b => `
+                            <tr>
+                                <td>${b.roll_no}</td>
+                                <td>${b.name}</td>
+                                <td class="absent">⚠️ Not Marked</td>
+                            </tr>
+                        `).join('');
+                    }
+                });
+        }
+
+        // Refresh every 10 seconds
+        setInterval(refreshAttendanceList, 10000);
+        refreshAttendanceList();
+    </script>
+</body>
+
+</html>

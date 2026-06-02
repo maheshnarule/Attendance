@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Live Attendance - Face & Location Verification</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .camera-section {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        video {
+            width: 100%;
+            max-width: 300px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .location-status {
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .location-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .location-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            margin-top: 10px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+
+            button {
+                padding: 10px 20px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>📸 Live Attendance</h2>
+
+        <div class="warning" id="qrWarning">
+            ⏰ QR Code Valid for 2 Minutes Only!
+        </div>
+
+        <form id="attendanceForm">
+            <div class="form-group">
+                <label>🎓 Roll Number:</label>
+                <input type="text" id="rollNo" required placeholder="Enter your roll number">
+            </div>
+
+            <div class="form-group">
+                <label>👤 Full Name:</label>
+                <input type="text" id="studentName" required placeholder="Enter your name">
+            </div>
+
+            <div class="camera-section">
+                <label>📷 Live Photo (Required)</label>
+                <video id="video" autoplay playsinline></video>
+                <button type="button" onclick="capturePhoto()">📸 Capture Selfie</button>
+                <canvas id="canvas"></canvas>
+                <div id="photoPreview"></div>
+            </div>
+
+            <div class="form-group">
+                <label>📍 Your Location:</label>
+                <button type="button" onclick="getLocation()">📍 Get Current Location</button>
+                <div id="locationStatus"></div>
+                <input type="hidden" id="latitude">
+                <input type="hidden" id="longitude">
+            </div>
+
+            <button type="submit" class="submit-btn">✅ Submit Attendance</button>
+        </form>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Verifying and submitting...</p>
+        </div>
+    </div>
+
+    <script>
+        // Get QR token from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const qrToken = urlParams.get('qr');
+
+        if (!qrToken) {
+            document.getElementById('qrWarning').innerHTML = '❌ Invalid QR Code! Please scan the QR code again.';
+            document.getElementById('qrWarning').style.background = '#f8d7da';
+            document.getElementById('qrWarning').style.color = '#721c24';
+        }
+
+        // Camera setup
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('canvas');
+        let photoData = null;
+
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => {
+                alert('Camera access denied! Please allow camera to mark attendance.');
+            });
+
+        function capturePhoto() {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            photoData = canvas.toDataURL('image/jpeg', 0.8);
+
+            const preview = document.getElementById('photoPreview');
+            preview.innerHTML = `<img src="${photoData}" width="150" style="border-radius:10px; margin-top:10px;">`;
+        }
+
+        function getLocation() {
+            const statusDiv = document.getElementById('locationStatus');
+            statusDiv.innerHTML = '<div class="location-status">📍 Fetching location...</div>';
+
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+
+                    document.getElementById('latitude').value = lat;
+                    document.getElementById('longitude').value = lon;
+
+                    statusDiv.innerHTML = `
+                        <div class="location-status location-success">
+                            ✅ Location captured: ${lat.toFixed(6)}, ${lon.toFixed(6)}
+                        </div>
+                    `;
+                },
+                error => {
+                    statusDiv.innerHTML = `
+                        <div class="location-status location-error">
+                            ❌ Location access denied! Please enable location.
+                        </div>
+                    `;
+                }
+            );
+        }
+
+        // Form submission
+        document.getElementById('attendanceForm').onsubmit = async (e) => {
+            e.preventDefault();
+
+            const rollNo = document.getElementById('rollNo').value;
+            const studentName = document.getElementById('studentName').value;
+            const latitude = document.getElementById('latitude').value;
+            const longitude = document.getElementById('longitude').value;
+
+            if (!photoData) {
+                alert('Please capture your selfie first!');
+                return;
+            }
+
+            if (!latitude || !longitude) {
+                alert('Please share your location first!');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.querySelector('button[type="submit"]').disabled = true;
+
+            const data = {
+                rollNo: rollNo,
+                studentName: studentName,
+                photo: photoData,
+                latitude: parseFloat(latitude),
+                longitude: parseFloat(longitude),
+                qrToken: qrToken,
+                timestamp: new Date().toISOString()
+            };
+
+            try {
+                const response = await fetch('http://localhost:5000/api/submit-attendance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    let message = `✅ ${result.message}\n`;
+                    message += `Face: ${result.face_verified ? '✓' : '✗'} | Location: ${result.location_verified ? '✓' : '✗'}`;
+                    alert(message);
+                    window.close(); // Close tab after success
+                } else {
+                    alert(`❌ Failed: ${result.error}`);
+                }
+            } catch (error) {
+                alert('Network error! Please check your connection.');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.querySelector('button[type="submit"]').disabled = false;
+            }
+        };
+    </script>
+</body>
+
+</html>
